@@ -1,0 +1,16 @@
+training begin
+book_DNN_b128_lr0.001_d64_len20_test12
+iter: 1000, train loss: 7.7484, valid recall: 0.025741, valid ndcg: 0.018987, valid hitrate: 0.059055
+time interval: 0.3360 min
+book_DNN_b128_lr0.001_d64_len20_test12
+iter: 2000, train loss: 7.2630, valid recall: 0.031097, valid ndcg: 0.022440, valid hitrate: 0.068746
+time interval: 0.6183 min
+book_DNN_b128_lr0.001_d64_len20_test12
+iter: 3000, train loss: 6.9774, valid recall: 0.033270, valid ndcg: 0.024766, valid hitrate: 0.074627
+time interval: 0.9501 min
+book_DNN_b128_lr0.001_d64_len20_test12
+iter: 4000, train loss: 6.7895, valid recall: 0.036275, valid ndcg: 0.026720, valid hitrate: 0.080922
+time interval: 1.2283 min
+book_DNN_b128_lr0.001_d64_len20_test12
+iter: 5000, train loss: 6.6557, valid recall: 0.035999, valid ndcg: 0.025557, valid hitrate: 0.080243
+time interval: 1.5479 min
