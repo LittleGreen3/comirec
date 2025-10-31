@@ -64,7 +64,9 @@ parser.add_argument('--num_interest', type=int, default=4)
 parser.add_argument('--model_type', type=str, default='DNN', help='DNN | GRU4REC | MIND | ComiRec-DR | ComiRec-SA')
 parser.add_argument('--learning_rate', type=float, default=0.001, help='')
 parser.add_argument('--max_iter', type=int, default=1000, help='(k)')
-parser.add_argument('--patience', type=int, default=50)
+parser.add_argument('--patience', type=int, default=50, help='early stopping patience')
+parser.add_argument('--neg_num', type=int, default=10, help='negative samples per positive sample')
+parser.add_argument('--test_iter', type=int, default=None, help='evaluation interval in iterations (default: 500 for taobao, 1000 for book)')
 parser.add_argument('--coef', default=None)
 parser.add_argument('--topN', type=int, default=50)
 
@@ -283,7 +285,26 @@ def train(
 
     keras_model = get_model(dataset, model_type, item_count, maxlen)
     optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
-    neg_num = 10
+    neg_num = args.neg_num  # 使用命令行参数而不是硬编码
+    
+    # 为多兴趣模型自动调整 patience（如果使用默认值）
+    if model_type in ['ComiRec-DR', 'ComiRec-SA', 'MIND'] and patience == 50:
+        patience = 100
+        print(f"⚠️  多兴趣模型自动调整 patience: 50 → 100")
+        print(f"   原因：多兴趣模型需要更多训练时间来收敛")
+    
+    # 检查 ComiRec-DR 的学习率
+    if model_type == 'ComiRec-DR' and lr == 0.001:
+        print("=" * 80)
+        print("⚠️  警告：ComiRec-DR 推荐使用 learning_rate=0.005")
+        print("   当前使用 lr=0.001 可能导致：")
+        print("   - 训练速度慢")
+        print("   - 容易陷入局部最优")
+        print("   - Recall 显著低于预期")
+        print("   ")
+        print("   建议：使用 --learning_rate 0.005 重新训练")
+        print("=" * 80)
+        print()
 
     # 注意：DataIterator 现在使用全局 random（已在主程序中设置 seed）
     # 这样可以确保每次运行的数据采样顺序一致，减少前期 recall 的波动
@@ -296,8 +317,13 @@ def train(
     ckpt_manager = tf.train.CheckpointManager(ckpt, ckpt_dir, max_to_keep=1)
     latest_ckpt = ckpt_manager.latest_checkpoint
     if latest_ckpt:
-        print(f"Restoring from checkpoint: {latest_ckpt}")
+        print(f"✅ 发现已有 checkpoint，自动恢复: {latest_ckpt}")
+        print(f"   将从上次训练继续...")
         ckpt.restore(latest_ckpt)
+        print(f"   当前学习率: {lr}")
+        print(f"   当前 patience: {patience}")
+        print(f"   负样本数: {neg_num} (每个正样本)")
+        print()
 
     # Training step function with @tf.function for efficiency
     @tf.function
@@ -484,13 +510,16 @@ if __name__ == '__main__':
         item_count = 1708531
         batch_size = 256
         maxlen = 50
-        test_iter = 500
+        default_test_iter = 500
     elif args.dataset == 'book':
         path = './data/book_data/'
         item_count = 367983
         batch_size = 128
         maxlen = 20
-        test_iter = 1000
+        default_test_iter = 1000
+    
+    # 如果命令行指定了 test_iter，使用命令行参数；否则使用默认值
+    test_iter = args.test_iter if args.test_iter is not None else default_test_iter
 
     train_file = path + args.dataset + '_train.txt'
     valid_file = path + args.dataset + '_valid.txt'

@@ -39,17 +39,25 @@ class KerasModelDNN(KerasModelBase):
     def call(self, inputs, training=False):
         # inputs: (mid, mid_hist, mask)
         mid, mid_hist, mask = inputs
-        item_emb = self.embed_items(mid)
         hist_emb = self.embed_items(mid_hist)
         mask_f = tf.cast(mask, tf.float32)
         hist_emb_masked = hist_emb * tf.expand_dims(mask_f, -1)
         denom = tf.reduce_sum(mask_f, axis=1, keepdims=True) + 1e-9
         user_hist_mean = tf.reduce_sum(hist_emb_masked, axis=1) / denom
         user_vec = self.proj(user_hist_mean)
+        # item_emb 只在训练时需要，评估时可以忽略
+        if mid is not None:
+            item_emb = self.embed_items(mid)
+        else:
+            item_emb = None
         return user_vec, item_emb
 
     def output_user(self, mid_hist, mask):
-        user_vec, _ = self([None, mid_hist, mask], training=False)
+        """返回用户向量，不需要目标 item"""
+        # DNN 模型只需要历史序列，不需要目标 item
+        batch_size = tf.shape(mid_hist)[0]
+        dummy_mid = tf.zeros((batch_size,), dtype=tf.int32)
+        user_vec, _ = self([dummy_mid, mid_hist, mask], training=False)
         return user_vec
 
     def output_item(self):
@@ -64,14 +72,22 @@ class KerasModelGRU4REC(KerasModelBase):
     def call(self, inputs, training=False):
         # inputs: (mid, mid_hist, mask)
         mid, mid_hist, mask = inputs
-        item_emb = self.embed_items(mid)
         hist_emb = self.embed_items(mid_hist)
         mask_bool = tf.cast(mask, tf.bool)
         user_vec = self.gru(hist_emb, mask=mask_bool)
+        # item_emb 只在训练时需要，评估时可以忽略
+        if mid is not None:
+            item_emb = self.embed_items(mid)
+        else:
+            item_emb = None
         return user_vec, item_emb
 
     def output_user(self, mid_hist, mask):
-        user_vec, _ = self([None, mid_hist, mask], training=False)
+        """返回用户向量，不需要目标 item"""
+        # GRU4REC 模型只需要历史序列，不需要目标 item
+        batch_size = tf.shape(mid_hist)[0]
+        dummy_mid = tf.zeros((batch_size,), dtype=tf.int32)
+        user_vec, _ = self([dummy_mid, mid_hist, mask], training=False)
         return user_vec
 
     def output_item(self):
