@@ -70,7 +70,7 @@ parser.add_argument('--test_iter', type=int, default=None, help='evaluation inte
 parser.add_argument('--coef', default=None)
 parser.add_argument('--topN', type=int, default=50)
 
-best_metric = 0
+best_metric = 0  # 全局变量，用于跟踪最优 recall
 
 
 def prepare_data(src, target):
@@ -230,13 +230,29 @@ def get_exp_name(dataset, model_type, batch_size, lr, maxlen, save=True):
     exp_name = para_name + '_' + extr_name
 
     while os.path.exists('runs/' + exp_name) and save:
-        flag = input('The exp name already exists. Do you want to cover? (y/n)')
-        if flag == 'y' or flag == 'Y':
-            shutil.rmtree('runs/' + exp_name)
+        # 检查是否存在 checkpoint（继续训练的情况）
+        best_model_path = "best_model/" + exp_name + '/'
+        ckpt_dir = os.path.join(best_model_path, 'keras_ckpt')
+        # 检查 checkpoint 目录是否存在且有 checkpoint 文件（.index 文件表示有效的 checkpoint）
+        has_checkpoint = False
+        if os.path.exists(ckpt_dir):
+            ckpt_files = [f for f in os.listdir(ckpt_dir) if f.endswith('.index')]
+            has_checkpoint = len(ckpt_files) > 0
+        
+        if has_checkpoint:
+            # 如果有 checkpoint，说明是继续训练，不删除目录，直接允许使用相同名称
+            print(f"✅ 检测到已有 checkpoint，将使用相同实验名称继续训练")
+            print(f"   日志将追加到现有文件，不会覆盖")
             break
         else:
-            extr_name = input('Please input the experiment name: ')
-            exp_name = para_name + '_' + extr_name
+            # 没有 checkpoint，可能是新训练或失败的训练
+            flag = input('The exp name already exists. Do you want to cover? (y/n)')
+            if flag == 'y' or flag == 'Y':
+                shutil.rmtree('runs/' + exp_name)
+                break
+            else:
+                extr_name = input('Please input the experiment name: ')
+                exp_name = para_name + '_' + extr_name
 
     return exp_name
 
@@ -312,7 +328,9 @@ def train(
     valid_data = DataIterator(valid_file, batch_size, maxlen, train_flag=1)
 
     # Checkpoint for model saving/restoring
-    ckpt = tf.train.Checkpoint(model=keras_model, optimizer=optimizer)
+    # 创建一个 tf.Variable 来保存 best_metric，以便能够持久化
+    best_metric_var = tf.Variable(0.0, dtype=tf.float32, name='best_metric')
+    ckpt = tf.train.Checkpoint(model=keras_model, optimizer=optimizer, best_metric=best_metric_var)
     ckpt_dir = os.path.join(best_model_path, 'keras_ckpt')
     ckpt_manager = tf.train.CheckpointManager(ckpt, ckpt_dir, max_to_keep=1)
     latest_ckpt = ckpt_manager.latest_checkpoint
@@ -320,9 +338,13 @@ def train(
         print(f"✅ 发现已有 checkpoint，自动恢复: {latest_ckpt}")
         print(f"   将从上次训练继续...")
         ckpt.restore(latest_ckpt)
+        # 恢复 best_metric
+        global best_metric
+        best_metric = float(best_metric_var.numpy())
         print(f"   当前学习率: {lr}")
         print(f"   当前 patience: {patience}")
         print(f"   负样本数: {neg_num} (每个正样本)")
+        print(f"   恢复的最优 recall: {best_metric:.6f}")
         print()
 
     # Training step function with @tf.function for efficiency
@@ -387,9 +409,12 @@ def train(
                     recall = metrics['recall']
                     if recall > best_metric:
                         best_metric = recall
+                        # 同步更新 tf.Variable
+                        best_metric_var.assign(best_metric)
                         if not os.path.exists(best_model_path):
                             os.makedirs(best_model_path)
                         ckpt_manager.save()
+                        print(f"   💾 保存新的最优模型，recall: {best_metric:.6f}")
                         trials = 0
                     else:
                         trials += 1
