@@ -8,19 +8,33 @@ Accepted to KDD 2020 ADS Track!
 
 ## Prerequisites
 
+<<<<<<< HEAD
 - Python 3.7+
 - TensorFlow-GPU >= 2.4 (supports TF 2.x)
 - Faiss-GPU
+=======
+- Python 3
+- TensorFlow-GPU >= 1.8 (< 2.0)
+- Faiss-GPU 
+>>>>>>> 9e74d7c9b056669623ed953baddab005543ea451
 
 ## Getting Started
 
 ### Installation
 
+<<<<<<< HEAD
 - Install TensorFlow-GPU 2.x: `pip install tensorflow-gpu>=2.4`
 
 - Install Faiss-GPU based on the instructions here: https://github.com/facebookresearch/faiss/blob/master/INSTALL.md
 
 - Clone this repo: `git clone https://github.com/THUDM/ComiRec`
+=======
+- Install TensorFlow-GPU 1.x
+
+- Install Faiss-GPU based on the instructions here: https://github.com/facebookresearch/faiss/blob/master/INSTALL.md
+
+- Clone this repo `git clone https://github.com/THUDM/ComiRec`.
+>>>>>>> 9e74d7c9b056669623ed953baddab005543ea451
 
 ### Dataset
 
@@ -52,6 +66,7 @@ If you want to train models on your own dataset, you should prepare the followin
 - train/valid/test file: Each line represents an interaction, which contains three numbers `<user_id>,<item_id>,<time_stamp>`.
 - category file (optional): Each line contains two numbers `<item_id>,<cate_id>` used for computing diversity..
 
+<<<<<<< HEAD
 ## Updates
 
 ### TensorFlow 2.x Migration (2024)
@@ -70,6 +85,8 @@ python src/train.py --dataset book --model_type ComiRec-DR
 
 See `USAGE_GUIDE.md` for detailed instructions.
 
+=======
+>>>>>>> 9e74d7c9b056669623ed953baddab005543ea451
 ## Common Issues
 
 <details>
@@ -82,6 +99,10 @@ I have updated the computation of NDCG score in the `master` branch according to
 By the way, I personally recommend to use the reported results of recall and hit rate only.
 </details>
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 9e74d7c9b056669623ed953baddab005543ea451
 If you have ANY difficulties to get things working in the above steps, feel free to open an issue. You can expect a reply within 24 hours.
 
 ## Acknowledgement
