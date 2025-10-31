@@ -1,14 +1,12 @@
 # ComiRec 使用指南
 
-## 训练模式选择
+## 训练模式
 
-ComiRec-DR 和 ComiRec-SA 支持两种训练模式：
-
-### 1. Keras/TF2 模式（推荐）✅
+所有模型现在都使用 **TensorFlow 2.x Keras API**，提供更快的训练速度和更高的内存效率。
 
 **使用方法**：
 ```bash
-python src/train.py --model_type ComiRec-DR --use_keras
+python src/train.py --model_type ComiRec-DR
 ```
 
 **特点**：
@@ -20,47 +18,16 @@ python src/train.py --model_type ComiRec-DR --use_keras
 
 **运行时提示**：
 ```
-================================================================================
-🚀 使用 Keras/TF2 训练模式
-📊 模型类型: ComiRec-DR
-💡 多兴趣模型: 评估时将使用所有 4 个兴趣向量
-   - 训练: 使用单个readout向量计算loss
-   - 评估: 使用所有兴趣向量搜索并合并结果，提高recall
-================================================================================
-```
-
-### 2. TensorFlow 1.x 兼容模式
-
-**使用方法**：
-```bash
-python src/train.py --model_type ComiRec-DR
-# 不加 --use_keras 参数
-```
-
-**特点**：
-- 使用 tf.compat.v1 API（兼容旧代码）
-- 同样支持多兴趣向量评估
-- 适合对比验证结果
-
-**运行时提示**：
-```
-================================================================================
-🔧 使用 TensorFlow 1.x 兼容模式
-📊 模型类型: ComiRec-DR
-💡 多兴趣模型: 评估时将使用所有 4 个兴趣向量
-   - 训练: 使用单个readout向量计算loss
-   - 评估: 使用所有兴趣向量搜索并合并结果，提高recall
-================================================================================
+training begin (Keras)
 ```
 
 ## 完整训练示例
 
-### 训练 ComiRec-DR（推荐 Keras 模式）
+### 训练 ComiRec-DR
 ```bash
 python src/train.py \
     --dataset book \
     --model_type ComiRec-DR \
-    --use_keras \
     --learning_rate 0.001 \
     --embedding_dim 64 \
     --hidden_size 64 \
@@ -69,12 +36,11 @@ python src/train.py \
     --patience 50
 ```
 
-### 训练 ComiRec-SA（推荐 Keras 模式）
+### 训练 ComiRec-SA
 ```bash
 python src/train.py \
     --dataset book \
     --model_type ComiRec-SA \
-    --use_keras \
     --learning_rate 0.001 \
     --embedding_dim 64 \
     --hidden_size 64 \
@@ -88,7 +54,6 @@ python src/train.py \
 python src/train.py \
     --dataset book \
     --model_type DNN \
-    --use_keras \
     --learning_rate 0.001 \
     --embedding_dim 64 \
     --hidden_size 64 \
@@ -142,7 +107,7 @@ python src/train.py \
 ### 如果 ComiRec recall 仍然低于 DNN：
 
 1. **确认使用了多兴趣向量评估**：
-   - 检查日志中是否有 "💡 多兴趣模型" 提示
+   - 检查日志中训练提示为 "training begin (Keras)"
    - 确认评估时输出 shape 为 3 维：`[batch_size, num_interest, dim]`
 
 2. **检查训练是否充分**：
@@ -153,10 +118,6 @@ python src/train.py \
    - `num_interest`：尝试 4, 8
    - `learning_rate`：尝试 0.001, 0.0001
    - `embedding_dim`：尝试 64, 128
-
-4. **对比两种模式的结果**：
-   - 分别用 Keras 模式和 TF1.x 模式训练
-   - 验证结果是否一致
 
 ## 参考
 

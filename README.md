@@ -8,19 +8,19 @@ Accepted to KDD 2020 ADS Track!
 
 ## Prerequisites
 
-- Python 3
-- TensorFlow-GPU >= 1.8 (< 2.0)
-- Faiss-GPU 
+- Python 3.7+
+- TensorFlow-GPU >= 2.4 (supports TF 2.x)
+- Faiss-GPU
 
 ## Getting Started
 
 ### Installation
 
-- Install TensorFlow-GPU 1.x
+- Install TensorFlow-GPU 2.x: `pip install tensorflow-gpu>=2.4`
 
 - Install Faiss-GPU based on the instructions here: https://github.com/facebookresearch/faiss/blob/master/INSTALL.md
 
-- Clone this repo `git clone https://github.com/THUDM/ComiRec`.
+- Clone this repo: `git clone https://github.com/THUDM/ComiRec`
 
 ### Dataset
 
@@ -52,6 +52,24 @@ If you want to train models on your own dataset, you should prepare the followin
 - train/valid/test file: Each line represents an interaction, which contains three numbers `<user_id>,<item_id>,<time_stamp>`.
 - category file (optional): Each line contains two numbers `<item_id>,<cate_id>` used for computing diversity..
 
+## Updates
+
+### TensorFlow 2.x Migration (2024)
+
+This repository has been **fully migrated to TensorFlow 2.x/Keras**:
+- ✅ All models now use modern Keras API
+- ✅ Faster training with `@tf.function` compilation
+- ✅ More efficient checkpointing with `tf.train.Checkpoint`
+- ✅ Simplified codebase (removed TF 1.x compatibility layer)
+- ✅ Fixed multi-interest evaluation logic
+
+**To train a model**, simply run:
+```bash
+python src/train.py --dataset book --model_type ComiRec-DR
+```
+
+See `USAGE_GUIDE.md` for detailed instructions.
+
 ## Common Issues
 
 <details>
@@ -63,7 +81,6 @@ I'm so sorry that the computation of NDCG score in the original version (now in 
 I have updated the computation of NDCG score in the `master` branch according to the correct definition. For reproducing the NDCG scores reported in the paper, please use the `paper` branch.
 By the way, I personally recommend to use the reported results of recall and hit rate only.
 </details>
-
 
 If you have ANY difficulties to get things working in the above steps, feel free to open an issue. You can expect a reply within 24 hours.
 
