@@ -38,14 +38,15 @@ elif name == 'book':
                 
                 cates = r['categories']
                 
-                # 检查 category 是否为空列表或空嵌套列表
-                if not cates or not cates[0]:
+                # 检查 category 是否为空列表
+                if not cates:
                     continue
                 
                 if iid not in item_map:
                     continue
                 
-                cate = cates[0][-1]
+                # 使用最后一个元素作为最具体的类别
+                cate = cates[-1]
                 if cate not in cate_map:
                     cate_map[cate] = len(cate_map) + 1
                 item_cate[item_map[iid]] = cate_map[cate]

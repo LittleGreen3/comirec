@@ -66,7 +66,8 @@ parser.add_argument('--learning_rate', type=float, default=0.001, help='')
 parser.add_argument('--max_iter', type=int, default=1000, help='(k)')
 parser.add_argument('--patience', type=int, default=50, help='early stopping patience')
 parser.add_argument('--neg_num', type=int, default=10, help='negative samples per positive sample')
-parser.add_argument('--test_iter', type=int, default=None, help='evaluation interval in iterations (default: 500 for taobao, 1000 for book)')
+parser.add_argument('--test_iter', type=int, default=None,
+                    help='evaluation interval in iterations (default: 500 for taobao, 1000 for book)')
 parser.add_argument('--coef', default=None)
 parser.add_argument('--topN', type=int, default=50)
 
@@ -90,49 +91,16 @@ def load_item_cate(source):
     return item_cate
 
 
-def compute_item_count_from_data(train_file, valid_file, test_file, cate_file=None):
-    """从数据文件中计算实际的 item_count（最大 item_id + 1）"""
-    max_item_id = 0
-    files_to_check = [train_file, valid_file, test_file]
-    
-    # 检查训练、验证、测试文件中的 item_id
-    for file_path in files_to_check:
-        if not os.path.exists(file_path):
-            continue
-        with open(file_path, 'r') as f:
-            for line in f:
-                conts = line.strip().split(',')
-                if len(conts) >= 2:
-                    item_id = int(conts[1])
-                    max_item_id = max(max_item_id, item_id)
-    
-    # 检查 item_cate 文件中的 item_id（如果提供）
-    if cate_file and os.path.exists(cate_file):
-        with open(cate_file, 'r') as f:
-            for line in f:
-                conts = line.strip().split(',')
-                if len(conts) >= 1:
-                    item_id = int(conts[0])
-                    max_item_id = max(max_item_id, item_id)
-    
-    # item_count = max_item_id + 1（因为 item_id 从 1 开始，0 是 padding）
-    item_count = max_item_id + 1
-    return item_count, max_item_id
-
-
 def compute_diversity(item_list, item_cate_map):
-    # 过滤掉不在 item_cate_map 中的 item 和无效 item（0 或负数）
-    valid_items = [item for item in item_list if item in item_cate_map and item > 0]
-    
-    # 如果有效 item 少于 2 个，无法计算多样性
-    if len(valid_items) < 2:
-        return 0.0
-    
-    n = len(valid_items)
+    # 过滤掉那些没有 category 信息的 item
+    filtered_items = [item for item in item_list if item in item_cate_map]
+    n = len(filtered_items)
+    if n < 2:
+        return 0.0  # 如果有效 item 少于 2 个，无法计算多样性
     diversity = 0.0
     for i in range(n):
         for j in range(i + 1, n):
-            diversity += item_cate_map[valid_items[i]] != item_cate_map[valid_items[j]]
+            diversity += item_cate_map[filtered_items[i]] != item_cate_map[filtered_items[j]]
     diversity /= ((n - 1) * n / 2)
     return diversity
 
@@ -323,13 +291,13 @@ def train(
     keras_model = get_model(dataset, model_type, item_count, maxlen)
     optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
     neg_num = args.neg_num  # 使用命令行参数而不是硬编码
-    
+
     # 为多兴趣模型自动调整 patience（如果使用默认值）
     if model_type in ['ComiRec-DR', 'ComiRec-SA', 'MIND'] and patience == 50:
         patience = 100
         print(f"⚠️  多兴趣模型自动调整 patience: 50 → 100")
         print(f"   原因：多兴趣模型需要更多训练时间来收敛")
-    
+
     # 检查 ComiRec-DR 的学习率
     if model_type == 'ComiRec-DR' and lr == 0.001:
         print("=" * 80)
@@ -428,6 +396,7 @@ def train(
                             os.makedirs(best_model_path)
                         ckpt_manager.save()
                         trials = 0
+                        print(f"🎉 Recall 提升至 {recall:.6f}，模型已保存")
                     else:
                         trials += 1
                         if trials > patience:
@@ -554,7 +523,7 @@ if __name__ == '__main__':
         batch_size = 128
         maxlen = 20
         default_test_iter = 1000
-    
+
     # 如果命令行指定了 test_iter，使用命令行参数；否则使用默认值
     test_iter = args.test_iter if args.test_iter is not None else default_test_iter
 
@@ -563,19 +532,6 @@ if __name__ == '__main__':
     test_file = path + args.dataset + '_test.txt'
     cate_file = path + args.dataset + '_item_cate.txt'
     dataset = args.dataset
-
-    # 从实际数据中自动计算 item_count（避免硬编码问题）
-    computed_item_count, max_item_id = compute_item_count_from_data(train_file, valid_file, test_file, cate_file)
-    if computed_item_count > item_count:
-        print(f"⚠️  警告：检测到数据中的最大 item_id ({max_item_id}) 超出了硬编码的 item_count ({item_count})")
-        print(f"   自动将 item_count 从 {item_count} 更新为 {computed_item_count}")
-        item_count = computed_item_count
-    elif computed_item_count < item_count:
-        print(f"ℹ️  信息：数据中的最大 item_id ({max_item_id}) 小于硬编码的 item_count ({item_count})")
-        print(f"   保持 item_count = {item_count}（支持更大的 item_id 范围）")
-    else:
-        print(f"✅ item_count = {item_count}（与数据匹配：最大 item_id = {max_item_id}）")
-    print()
 
     if args.p == 'train':
         train(train_file=train_file, valid_file=valid_file, test_file=test_file, cate_file=cate_file,
