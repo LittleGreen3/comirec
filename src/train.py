@@ -70,7 +70,7 @@ parser.add_argument('--test_iter', type=int, default=None, help='evaluation inte
 parser.add_argument('--coef', default=None)
 parser.add_argument('--topN', type=int, default=50)
 
-best_metric = 0  # 全局变量，用于跟踪最优 recall
+best_metric = 0
 
 
 def prepare_data(src, target):
@@ -90,12 +90,49 @@ def load_item_cate(source):
     return item_cate
 
 
+def compute_item_count_from_data(train_file, valid_file, test_file, cate_file=None):
+    """从数据文件中计算实际的 item_count（最大 item_id + 1）"""
+    max_item_id = 0
+    files_to_check = [train_file, valid_file, test_file]
+    
+    # 检查训练、验证、测试文件中的 item_id
+    for file_path in files_to_check:
+        if not os.path.exists(file_path):
+            continue
+        with open(file_path, 'r') as f:
+            for line in f:
+                conts = line.strip().split(',')
+                if len(conts) >= 2:
+                    item_id = int(conts[1])
+                    max_item_id = max(max_item_id, item_id)
+    
+    # 检查 item_cate 文件中的 item_id（如果提供）
+    if cate_file and os.path.exists(cate_file):
+        with open(cate_file, 'r') as f:
+            for line in f:
+                conts = line.strip().split(',')
+                if len(conts) >= 1:
+                    item_id = int(conts[0])
+                    max_item_id = max(max_item_id, item_id)
+    
+    # item_count = max_item_id + 1（因为 item_id 从 1 开始，0 是 padding）
+    item_count = max_item_id + 1
+    return item_count, max_item_id
+
+
 def compute_diversity(item_list, item_cate_map):
-    n = len(item_list)
+    # 过滤掉不在 item_cate_map 中的 item 和无效 item（0 或负数）
+    valid_items = [item for item in item_list if item in item_cate_map and item > 0]
+    
+    # 如果有效 item 少于 2 个，无法计算多样性
+    if len(valid_items) < 2:
+        return 0.0
+    
+    n = len(valid_items)
     diversity = 0.0
     for i in range(n):
         for j in range(i + 1, n):
-            diversity += item_cate_map[item_list[i]] != item_cate_map[item_list[j]]
+            diversity += item_cate_map[valid_items[i]] != item_cate_map[valid_items[j]]
     diversity /= ((n - 1) * n / 2)
     return diversity
 
@@ -230,29 +267,13 @@ def get_exp_name(dataset, model_type, batch_size, lr, maxlen, save=True):
     exp_name = para_name + '_' + extr_name
 
     while os.path.exists('runs/' + exp_name) and save:
-        # 检查是否存在 checkpoint（继续训练的情况）
-        best_model_path = "best_model/" + exp_name + '/'
-        ckpt_dir = os.path.join(best_model_path, 'keras_ckpt')
-        # 检查 checkpoint 目录是否存在且有 checkpoint 文件（.index 文件表示有效的 checkpoint）
-        has_checkpoint = False
-        if os.path.exists(ckpt_dir):
-            ckpt_files = [f for f in os.listdir(ckpt_dir) if f.endswith('.index')]
-            has_checkpoint = len(ckpt_files) > 0
-        
-        if has_checkpoint:
-            # 如果有 checkpoint，说明是继续训练，不删除目录，直接允许使用相同名称
-            print(f"✅ 检测到已有 checkpoint，将使用相同实验名称继续训练")
-            print(f"   日志将追加到现有文件，不会覆盖")
+        flag = input('The exp name already exists. Do you want to cover? (y/n)')
+        if flag == 'y' or flag == 'Y':
+            shutil.rmtree('runs/' + exp_name)
             break
         else:
-            # 没有 checkpoint，可能是新训练或失败的训练
-            flag = input('The exp name already exists. Do you want to cover? (y/n)')
-            if flag == 'y' or flag == 'Y':
-                shutil.rmtree('runs/' + exp_name)
-                break
-            else:
-                extr_name = input('Please input the experiment name: ')
-                exp_name = para_name + '_' + extr_name
+            extr_name = input('Please input the experiment name: ')
+            exp_name = para_name + '_' + extr_name
 
     return exp_name
 
@@ -328,9 +349,7 @@ def train(
     valid_data = DataIterator(valid_file, batch_size, maxlen, train_flag=1)
 
     # Checkpoint for model saving/restoring
-    # 创建一个 tf.Variable 来保存 best_metric，以便能够持久化
-    best_metric_var = tf.Variable(0.0, dtype=tf.float32, name='best_metric')
-    ckpt = tf.train.Checkpoint(model=keras_model, optimizer=optimizer, best_metric=best_metric_var)
+    ckpt = tf.train.Checkpoint(model=keras_model, optimizer=optimizer)
     ckpt_dir = os.path.join(best_model_path, 'keras_ckpt')
     ckpt_manager = tf.train.CheckpointManager(ckpt, ckpt_dir, max_to_keep=1)
     latest_ckpt = ckpt_manager.latest_checkpoint
@@ -338,13 +357,9 @@ def train(
         print(f"✅ 发现已有 checkpoint，自动恢复: {latest_ckpt}")
         print(f"   将从上次训练继续...")
         ckpt.restore(latest_ckpt)
-        # 恢复 best_metric
-        global best_metric
-        best_metric = float(best_metric_var.numpy())
         print(f"   当前学习率: {lr}")
         print(f"   当前 patience: {patience}")
         print(f"   负样本数: {neg_num} (每个正样本)")
-        print(f"   恢复的最优 recall: {best_metric:.6f}")
         print()
 
     # Training step function with @tf.function for efficiency
@@ -409,12 +424,9 @@ def train(
                     recall = metrics['recall']
                     if recall > best_metric:
                         best_metric = recall
-                        # 同步更新 tf.Variable
-                        best_metric_var.assign(best_metric)
                         if not os.path.exists(best_model_path):
                             os.makedirs(best_model_path)
                         ckpt_manager.save()
-                        print(f"   💾 保存新的最优模型，recall: {best_metric:.6f}")
                         trials = 0
                     else:
                         trials += 1
@@ -551,6 +563,19 @@ if __name__ == '__main__':
     test_file = path + args.dataset + '_test.txt'
     cate_file = path + args.dataset + '_item_cate.txt'
     dataset = args.dataset
+
+    # 从实际数据中自动计算 item_count（避免硬编码问题）
+    computed_item_count, max_item_id = compute_item_count_from_data(train_file, valid_file, test_file, cate_file)
+    if computed_item_count > item_count:
+        print(f"⚠️  警告：检测到数据中的最大 item_id ({max_item_id}) 超出了硬编码的 item_count ({item_count})")
+        print(f"   自动将 item_count 从 {item_count} 更新为 {computed_item_count}")
+        item_count = computed_item_count
+    elif computed_item_count < item_count:
+        print(f"ℹ️  信息：数据中的最大 item_id ({max_item_id}) 小于硬编码的 item_count ({item_count})")
+        print(f"   保持 item_count = {item_count}（支持更大的 item_id 范围）")
+    else:
+        print(f"✅ item_count = {item_count}（与数据匹配：最大 item_id = {max_item_id}）")
+    print()
 
     if args.p == 'train':
         train(train_file=train_file, valid_file=valid_file, test_file=test_file, cate_file=cate_file,

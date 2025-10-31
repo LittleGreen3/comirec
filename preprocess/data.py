@@ -17,17 +17,17 @@ users = defaultdict(list)
 item_count = defaultdict(int)
 
 def read_from_amazon(source):
-    with open(source, 'r') as f:
+    with open(source, 'r', encoding='utf-8') as f:
         for line in f:
             r = json.loads(line.strip())
-            uid = r['reviewerID']
+            uid = r['user_id']
             iid = r['asin']
             item_count[iid] += 1
-            ts = float(r['unixReviewTime'])
+            ts = float(r['timestamp'])
             users[uid].append((iid, ts))
 
 def read_from_taobao(source):
-    with open(source, 'r') as f:
+    with open(source, 'r', encoding='utf-8') as f:
         for line in f:
             conts = line.strip().split(',')
             uid = int(conts[0])
@@ -40,7 +40,7 @@ def read_from_taobao(source):
 
 
 if name == 'book':
-    read_from_amazon('reviews_Books_5.json')
+    read_from_amazon('Books_5_2023.jsonl')
 elif name == 'taobao':
     read_from_taobao('UserBehavior.csv')
 
@@ -78,13 +78,13 @@ valid_users = user_ids[split_1:split_2]
 test_users = user_ids[split_2:]
 
 def export_map(name, map_dict):
-    with open(name, 'w') as f:
+    with open(name, 'w', encoding='utf-8') as f:
         for key, value in map_dict.items():
             f.write('%s,%d\n' % (key, value))
 
 def export_data(name, user_list):
     total_data = 0
-    with open(name, 'w') as f:
+    with open(name, 'w', encoding='utf-8') as f:
         for user in user_list:
             if user not in user_map:
                 continue

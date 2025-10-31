@@ -8,13 +8,13 @@ if len(sys.argv) > 1:
 item_cate = {}
 item_map = {}
 cate_map = {}
-with open('./data/%s_data/%s_item_map.txt' % (name, name), 'r') as f:
+with open('./data/%s_data/%s_item_map.txt' % (name, name), 'r', encoding='utf-8') as f:
     for line in f:
         conts = line.strip().split(',')
         item_map[conts[0]] = conts[1]
 
 if name == 'taobao':
-    with open('UserBehavior.csv', 'r') as f:
+    with open('UserBehavior.csv', 'r', encoding='utf-8') as f:
         for line in f:
             conts = line.strip().split(',')
             iid = conts[1]
@@ -26,21 +26,36 @@ if name == 'taobao':
                     cate_map[cid] = len(cate_map) + 1
                 item_cate[item_map[iid]] = cate_map[cid]
 elif name == 'book':
-    with open('meta_Books.json', 'r') as f:
+    with open('meta_Books.jsonl', 'r', encoding='utf-8') as f:
         for line in f:
-            r = eval(line.strip())
-            iid = r['asin']
-            cates = r['categories']
-            if iid not in item_map:
+            try:
+                r = json.loads(line.strip())
+                iid = r['parent_asin']
+                
+                # 检查是否有 category 字段
+                if 'categories' not in r:
+                    continue
+                
+                cates = r['categories']
+                
+                # 检查 category 是否为空列表或空嵌套列表
+                if not cates or not cates[0]:
+                    continue
+                
+                if iid not in item_map:
+                    continue
+                
+                cate = cates[0][-1]
+                if cate not in cate_map:
+                    cate_map[cate] = len(cate_map) + 1
+                item_cate[item_map[iid]] = cate_map[cate]
+            except (KeyError, IndexError, ValueError, TypeError) as e:
+                # 跳过格式不正确或缺少字段的行
                 continue
-            cate = cates[0][-1]
-            if cate not in cate_map:
-                cate_map[cate] = len(cate_map) + 1
-            item_cate[item_map[iid]] = cate_map[cate]
 
-with open('./data/%s_data/%s_cate_map.txt' % (name, name), 'w') as f:
+with open('./data/%s_data/%s_cate_map.txt' % (name, name), 'w', encoding='utf-8') as f:
     for key, value in cate_map.items():
         f.write('%s,%s\n' % (key, value))
-with open('./data/%s_data/%s_item_cate.txt' % (name, name), 'w') as f:
+with open('./data/%s_data/%s_item_cate.txt' % (name, name), 'w', encoding='utf-8') as f:
     for key, value in item_cate.items():
         f.write('%s,%s\n' % (key, value))
