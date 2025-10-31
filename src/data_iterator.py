@@ -9,7 +9,8 @@ class DataIterator:
     def __init__(self, source,
                  batch_size=128,
                  maxlen=100,
-                 train_flag=0
+                 train_flag=0,
+                 random_seed=None
                 ):
         self.read(source)
         self.users = list(self.users)
@@ -19,6 +20,14 @@ class DataIterator:
         self.train_flag = train_flag
         self.maxlen = maxlen
         self.index = 0
+        
+        # 使用独立的 Random 对象，以便控制随机性
+        # 如果提供了 seed，使用它；否则使用全局 random（已在主程序中设置 seed）
+        if random_seed is not None:
+            self.rng = random.Random(random_seed)
+        else:
+            # 使用全局 random 对象，它已经被主程序设置了 seed
+            self.rng = random
 
     def __iter__(self):
         return self
@@ -49,7 +58,8 @@ class DataIterator:
     
     def __next__(self):
         if self.train_flag == 0:
-            user_id_list = random.sample(self.users, self.batch_size)
+            # 使用 self.rng 而不是直接使用 random，以保持随机性可控
+            user_id_list = self.rng.sample(self.users, self.batch_size)
         else:
             total_user = len(self.users)
             if self.index >= total_user:
@@ -64,7 +74,8 @@ class DataIterator:
         for user_id in user_id_list:
             item_list = self.graph[user_id]
             if self.train_flag == 0:
-                k = random.choice(range(4, len(item_list)))
+                # 使用 self.rng 而不是直接使用 random，以保持随机性可控
+                k = self.rng.choice(range(4, len(item_list)))
                 item_id_list.append(item_list[k])
             else:
                 k = int(len(item_list) * 0.8)
