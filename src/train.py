@@ -10,8 +10,62 @@ from collections import defaultdict
 
 import numpy as np
 
-import faiss
+# ============================================================================
+# 环境变量和警告屏蔽配置（必须在导入 TensorFlow 之前）
+# ============================================================================
+
+# 1. 屏蔽 TensorFlow 警告信息
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # 只显示 ERROR，屏蔽 WARNING 和 INFO
+os.environ['TF_MLIR_ENABLE_GPU_KERNEL_GEN'] = '0'  # 禁用 MLIR GPU kernel 生成警告
+os.environ['TF_XLA_FLAGS'] = '--tf_xla_enable_xla_devices'
+
+# 2. CUDA 相关环境变量设置
+os.environ['TF_CUDNN_WORKSPACE_LIMIT_IN_MB'] = '4096'
+os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
+
+# 3. CUDA 库路径配置（支持 conda 环境）
+# Windows 和 Linux 都支持
+if 'CONDA_PREFIX' in os.environ:
+    conda_lib = os.path.join(os.environ['CONDA_PREFIX'], 'lib')
+    if os.path.exists(conda_lib):
+        # 检查是否有 CUDA 库
+        try:
+            files = os.listdir(conda_lib)
+            has_cuda = any(f.startswith('libcudart') for f in files) or any(
+                f.startswith('cudart64_') for f in files)
+            if has_cuda:
+                # Windows 使用 PATH，Linux 使用 LD_LIBRARY_PATH
+                if sys.platform == 'win32':
+                    current_path = os.environ.get('PATH', '')
+                    if conda_lib not in current_path:
+                        if current_path:
+                            os.environ['PATH'] = f'{conda_lib};{current_path}'
+                        else:
+                            os.environ['PATH'] = conda_lib
+                    # Windows 也可以使用 os.add_dll_directory (Python 3.8+)
+                    if sys.version_info >= (3, 8):
+                        try:
+                            os.add_dll_directory(conda_lib)
+                        except (OSError, AttributeError):
+                            pass
+                else:
+                    # Linux/macOS
+                    current_ld_path = os.environ.get('LD_LIBRARY_PATH', '')
+                    if conda_lib not in current_ld_path:
+                        if current_ld_path:
+                            os.environ['LD_LIBRARY_PATH'] = f'{conda_lib}:{current_ld_path}'
+                        else:
+                            os.environ['LD_LIBRARY_PATH'] = conda_lib
+        except (OSError, PermissionError):
+            pass
+
+# 4. 导入 TensorFlow 并设置日志级别
 import tensorflow as tf
+# 进一步屏蔽 TensorFlow 的警告
+tf.get_logger().setLevel('ERROR')
+
+import faiss
+
 from data_iterator import DataIterator
 from model import (
     KerasModelDNN, KerasModelGRU4REC,
@@ -78,6 +132,38 @@ def prepare_data(src, target):
     nick_id, item_id = src
     hist_item, hist_mask = target
     return nick_id, item_id, hist_item, hist_mask
+
+
+def scan_max_item_id(data_files):
+    """
+    扫描所有数据文件找出最大的 item_id
+    
+    Args:
+        data_files: 数据文件路径列表（可以是None，表示跳过）
+    
+    Returns:
+        最大 item_id，如果所有文件都不存在或为空则返回 0
+    """
+    max_item_id = 0
+    
+    for data_file in data_files:
+        if data_file is None or not os.path.exists(data_file):
+            continue
+        
+        try:
+            file_max = 0
+            with open(data_file, 'r') as f:
+                for line in f:
+                    conts = line.strip().split(',')
+                    if len(conts) >= 2:
+                        item_id = int(conts[1])
+                        if item_id > 0:
+                            file_max = max(file_max, item_id)
+            max_item_id = max(max_item_id, file_max)
+        except Exception:
+            pass
+    
+    return max_item_id
 
 
 def load_item_cate(source):
@@ -273,43 +359,17 @@ def train(
 
     best_model_path = "best_model/" + exp_name + '/'
 
-    # Configure GPU memory growth
-    try:
-        gpus = tf.config.list_physical_devices('GPU')
-        for _gpu in gpus:
-            try:
-                tf.config.experimental.set_memory_growth(_gpu, True)
-            except Exception:
-                pass
-    except Exception:
-        pass
-
     writer = TF2SummaryWriter('runs/' + exp_name)
 
     item_cate_map = load_item_cate(cate_file)
 
     keras_model = get_model(dataset, model_type, item_count, maxlen)
     optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
-    neg_num = args.neg_num  # 使用命令行参数而不是硬编码
+    neg_num = args.neg_num
 
-    # 为多兴趣模型自动调整 patience（如果使用默认值）
+    # 为多兴趣模型自动调整 patience
     if model_type in ['ComiRec-DR', 'ComiRec-SA', 'MIND'] and patience == 50:
         patience = 100
-        print(f"⚠️  多兴趣模型自动调整 patience: 50 → 100")
-        print(f"   原因：多兴趣模型需要更多训练时间来收敛")
-
-    # 检查 ComiRec-DR 的学习率
-    if model_type == 'ComiRec-DR' and lr == 0.001:
-        print("=" * 80)
-        print("⚠️  警告：ComiRec-DR 推荐使用 learning_rate=0.005")
-        print("   当前使用 lr=0.001 可能导致：")
-        print("   - 训练速度慢")
-        print("   - 容易陷入局部最优")
-        print("   - Recall 显著低于预期")
-        print("   ")
-        print("   建议：使用 --learning_rate 0.005 重新训练")
-        print("=" * 80)
-        print()
 
     # 注意：DataIterator 现在使用全局 random（已在主程序中设置 seed）
     # 这样可以确保每次运行的数据采样顺序一致，减少前期 recall 的波动
@@ -322,13 +382,8 @@ def train(
     ckpt_manager = tf.train.CheckpointManager(ckpt, ckpt_dir, max_to_keep=1)
     latest_ckpt = ckpt_manager.latest_checkpoint
     if latest_ckpt:
-        print(f"✅ 发现已有 checkpoint，自动恢复: {latest_ckpt}")
-        print(f"   将从上次训练继续...")
+        print(f"恢复 checkpoint: {latest_ckpt}")
         ckpt.restore(latest_ckpt)
-        print(f"   当前学习率: {lr}")
-        print(f"   当前 patience: {patience}")
-        print(f"   负样本数: {neg_num} (每个正样本)")
-        print()
 
     # Training step function with @tf.function for efficiency
     @tf.function
@@ -360,17 +415,18 @@ def train(
     iter = 0
     loss_sum = 0.0
     trials = 0
+    
     try:
         for src, tgt in train_data:
             nick_id, item_id, hist_item, hist_mask = prepare_data(src, tgt)
-            bsz = len(item_id)
-            dummy_mid = tf.convert_to_tensor(np.zeros((bsz,), dtype=np.int32))
-            hist_item = tf.convert_to_tensor(hist_item, dtype=tf.int32)
-            hist_mask = tf.convert_to_tensor(hist_mask, dtype=tf.float32)
-            item_id = tf.convert_to_tensor(item_id, dtype=tf.int32)
+            batch_size = len(item_id)
+            dummy_mid = tf.convert_to_tensor(np.zeros((batch_size,), dtype=np.int32))
+            hist_item_tensor = tf.convert_to_tensor(hist_item, dtype=tf.int32)
+            hist_mask_tensor = tf.convert_to_tensor(hist_mask, dtype=tf.float32)
+            item_id_tensor = tf.convert_to_tensor(item_id, dtype=tf.int32)
 
-            num_sampled = neg_num * bsz
-            loss = train_one_step(dummy_mid, hist_item, hist_mask, item_id, num_sampled)
+            num_sampled = neg_num * batch_size
+            loss = train_one_step(dummy_mid, hist_item_tensor, hist_mask_tensor, item_id_tensor, num_sampled)
             loss_sum += float(loss.numpy())
             iter += 1
 
@@ -498,9 +554,26 @@ def output(
 
 
 if __name__ == '__main__':
-    print(sys.argv)
     args = parser.parse_args()
     SEED = args.random_seed
+
+    # 配置GPU设备
+    gpus = tf.config.list_physical_devices('GPU')
+    if len(gpus) == 0:
+        print("错误：未检测到GPU设备！")
+        sys.exit(1)
+    
+    try:
+        # 为每个GPU设置内存增长策略
+        for gpu in gpus:
+            try:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            except RuntimeError:
+                pass
+        tf.config.set_soft_device_placement(True)
+    except RuntimeError as e:
+        print(f"GPU配置失败: {e}")
+        sys.exit(1)
 
     # Set random seeds
     tf.random.set_seed(SEED)
@@ -532,6 +605,29 @@ if __name__ == '__main__':
     test_file = path + args.dataset + '_test.txt'
     cate_file = path + args.dataset + '_item_cate.txt'
     dataset = args.dataset
+
+    # 扫描所有数据文件找出最大 item_id，动态调整 item_count
+    print("=" * 80)
+    print("🔍 正在扫描数据文件以确定 item_id 范围...")
+    print("=" * 80)
+    data_files = [train_file, valid_file, test_file]
+    max_item_id = scan_max_item_id(data_files)
+    
+    if max_item_id > 0:
+        original_item_count = item_count
+        # item_count 需要至少是 max_item_id + 1（因为 item_id 范围是 [1, item_count)）
+        item_count = max(item_count, max_item_id + 1)
+        print("=" * 80)
+        print(f"✅ 扫描完成：最大 item_id = {max_item_id}")
+        if item_count > original_item_count:
+            print(f"📈 自动调整 item_count: {original_item_count} → {item_count}")
+        else:
+            print(f"✓  item_count ({item_count}) 已满足需求（最大 item_id + 1 = {max_item_id + 1}）")
+        print("=" * 80)
+        print()
+    else:
+        print("⚠️  警告：未能从数据文件中找到有效的 item_id，使用默认 item_count")
+        print()
 
     if args.p == 'train':
         train(train_file=train_file, valid_file=valid_file, test_file=test_file, cate_file=cate_file,

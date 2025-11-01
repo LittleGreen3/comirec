@@ -30,13 +30,13 @@ elif name == 'book':
         for line in f:
             try:
                 r = json.loads(line.strip())
-                iid = r['parent_asin']
+                iid = r['asin']
                 
                 # 检查是否有 category 字段
-                if 'categories' not in r:
+                if 'category' not in r:
                     continue
                 
-                cates = r['categories']
+                cates = r['category']
                 
                 # 检查 category 是否为空列表
                 if not cates:
